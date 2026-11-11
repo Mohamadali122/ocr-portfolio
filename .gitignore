@@ -1,0 +1,72 @@
+.env
+*.pyc
+__pycache__/
+
+# AI-assistant / agent tooling — keep local, out of the repo.
+CLAUDE.md
+AGENTS.md
+.claude/
+.clinerules/
+.cursor/*
+!.cursor/skills/
+!.cursor/skills/**
+!.cursor/rules/
+!.cursor/rules/**
+!.cursor/hooks.json
+.agents
+.codex
+.cursor
+
+# Impeccable ephemeral output (see https://github.com/pbakaus/impeccable)
+# impeccable-ignore-start
+.impeccable/config.local.json
+.impeccable/hook.cache.json
+.impeccable/hook.pending.json
+.impeccable/*.png
+.impeccable/live/server.json
+.impeccable/live/sessions/
+.impeccable/live/previews/
+.impeccable/live/annotations/
+.impeccable/live/cache/
+.impeccable/live/manual-edit-apply-transaction.json
+.impeccable/live/manual-edit-events.jsonl
+.impeccable/live/manual-edit-evidence/
+.impeccable/live/pending-manual-edits.json
+.impeccable/live/deferred-svelte-component-accepts.json
+.impeccable/live/*.png
+# impeccable-ignore-end
+.windsurf/
+.opencode/
+.github/copilot-instructions.md
+.aider*
+*.ai
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.cache/
+
+# Never commit anything that has touched a real document. Everything here is PHI.
+data/
+sample/
+data*.zip
+*.zip
+*.pdf
+*.tif
+*.tiff
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+# Client-supplied source documents (may name patients / carry process detail).
+New prebilling process.docx
+*.docx
+!files_for_project/TAGS.docx
+PROJECT_GUIDE.md

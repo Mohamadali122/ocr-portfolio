@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+env:
+  # Owner role -- alembic connects with this one (Settings.database_url).
+  POSTGRES_USER: ci
+  POSTGRES_PASSWORD: ci-password
+  POSTGRES_DB: doc_ocr_ci
+  POSTGRES_HOST: localhost
+  # Restricted runtime role, created by the add_app_role migration.
+  POSTGRES_APP_USER: ci_app
+  POSTGRES_APP_PASSWORD: ci-app-password
+  ENVIRONMENT: local
+  DATA_DIR: /tmp/local-doc-ocr-ci-data
+  JWT_SECRET_KEY: ci-secret-that-is-comfortably-over-32-characters-long
+  STORAGE_ENCRYPTION_KEYS: v1:YXQBGj4alMxwnuUM2VdXsq3OxDUQLLcyVgKKWHncuh8=
+  STORAGE_ENCRYPTION_KEY_CURRENT: v1
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        # Duplicated from the workflow-level `env:` above rather than
+        # referencing it -- `services.<id>.env` values are evaluated before
+        # the job's own `env` context is guaranteed populated, so this stays
+        # the literal, unambiguous form.
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci-password
+          POSTGRES_DB: doc_ocr_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # No `[ocr]` extra: paddlepaddle/paddleocr/opencv (~2GB) back only the
+      # swappable OcrEngine adapter (app/ocr/paddle_engine.py), which every
+      # test fakes out (tests/fakes.py::FakeOcrEngine). The real pipeline
+      # preprocessing it always runs ahead of that seam -- pypdfium2/pillow,
+      # in app/ocr/rasterize.py and app/ocr/pdf_text.py -- are core
+      # `dependencies`, not part of this extra, specifically so `[dev]` alone
+      # is enough to exercise it for real (see pyproject.toml's comment on
+      # the `ocr` extra for the full reasoning).
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      # Validates every migration applies cleanly to a fresh database (the
+      # exact class of bug CLAUDE.md warns autogenerate misses), and creates
+      # the app role the app itself connects as.
+      - name: Run migrations
+        run: alembic upgrade head
+
+      - name: ruff check
+        run: ruff check app tests
+
+      - name: ruff format --check
+        run: ruff format --check app tests
+
+      - name: mypy
+        run: mypy app
+
+      # Enforces the layering rules in pyproject.toml's [tool.importlinter]
+      # contracts -- services never import concrete adapters, models/repos
+      # never reach up into services, the domain never imports the web layer.
+      - name: import-linter
+        run: lint-imports
+
+      - name: pytest
+        run: python -m pytest -v

@@ -1,0 +1,426 @@
+<!doctype html>
+<!-- impeccable-disable single-font,low-contrast,overused-font -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>local-doc-ocr console</title>
+<link rel="stylesheet" href="css/app.css">
+<script>
+// Theme pref (light/dark). Set before paint to avoid a flash of the wrong theme.
+// A theme choice isn't a credential; unlike the bearer token, it's fine in localStorage.
+(function () {
+  var t = localStorage.getItem("theme");
+  if (t !== "dark" && t !== "light") {
+    t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  document.documentElement.setAttribute("data-theme", t);
+})();
+</script>
+
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="wrap">
+  <header class="masthead">
+    <div class="brand-block">
+      <span class="brand">DOC<b>&middot;</b>OCR</span>
+      <span class="tag">dispatch console</span>
+    </div>
+    <nav class="shell-nav hidden" id="mainNav" aria-label="Workspace sections">
+      <a class="nav-link is-active" href="#uploadSection" data-section="uploadSection">Upload</a>
+      <a class="nav-link" href="#claimsSection" data-section="claimsSection">Claims</a>
+      <a class="nav-link" href="#searchSection" data-section="searchSection">Search</a>
+      <a class="nav-link" href="#reviewSection" data-section="reviewSection" aria-disabled="true" tabindex="-1">Review</a>
+      <a class="nav-link" href="#auditSection" data-section="auditSection">Audit</a>
+      <a class="nav-link hidden" href="#pipelineSection" data-section="pipelineSection" id="pipelineNavLink">Pipeline<span id="pipelineNavBadge" class="nav-badge hidden"></span></a>
+    </nav>
+    <span class="spacer"></span>
+    <div class="masthead-meta">
+      <span class="session-pill hidden" id="sessionTimer" aria-live="polite"></span>
+      <span class="who" id="who"></span>
+      <div class="toolbar">
+        <a href="help.html" class="button-secondary" aria-label="Help and reference">Help</a>
+        <button type="button" id="themeToggle" class="theme-toggle" aria-label="Switch to dark theme" aria-pressed="false">
+          <svg class="theme-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4"/>
+            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
+          </svg>
+          <svg class="theme-moon hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>
+          </svg>
+        </button>
+        <button type="button" id="logoutBtn" class="button-secondary hidden" aria-label="Sign out">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section id="login" class="login-shell" aria-label="Sign in">
+      <div class="panel login-card">
+        <div class="login-card-head">
+          <p class="eyebrow">Operator sign-in</p>
+        </div>
+        <form id="loginForm" class="login-form">
+          <div class="field">
+            <label for="email">Email</label>
+            <input id="email" type="email" autocomplete="username" required>
+          </div>
+          <div class="field">
+            <label for="password">Password</label>
+            <div class="password-wrap">
+              <input id="password" type="password" autocomplete="current-password" required>
+              <button type="button" id="passwordToggle" class="password-toggle" aria-label="Show password" aria-pressed="false">
+                <svg class="eye-open" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+                <svg class="eye-closed hidden" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                  <line x1="4" y1="20" x2="20" y2="4"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <button id="loginBtn" type="submit" class="login-submit">Sign in</button>
+          <div id="loginMsg" class="msg login-msg" role="status" aria-live="polite"></div>
+        </form>
+      </div>
+    </section>
+
+    <section id="app" class="shell hidden" aria-label="Operator workspace">
+      <div class="main-grid">
+        <section id="uploadSection" class="hero-grid tab-content" aria-label="Upload and pipeline">
+          <div class="panel" id="uploadPanel">
+            <p class="eyebrow">Submit document</p>
+            <h2 class="section-title">Upload a claim attachment</h2>
+            <p class="section-note">PDF or image. Processing runs locally: OCR, then extraction.</p>
+            <form id="uploadForm">
+              <div class="field">
+                <label for="file">PDF or image</label>
+                <input id="file" type="file" accept="application/pdf,image/*" required>
+              </div>
+              <div class="field">
+                <label for="docType">Document type</label>
+                <select id="docType">
+                  <option value="unknown">unknown</option>
+                  <option value="hfs">hfs: hospital face sheet</option>
+                  <option value="epcr">epcr: patient care report</option>
+                </select>
+              </div>
+              <div class="form-actions">
+                <button id="uploadBtn" type="submit">Upload &amp; run OCR</button>
+              </div>
+              <div id="uploadMsg" class="msg" role="status" aria-live="polite"></div>
+            </form>
+          </div>
+
+          <div class="panel status-card" id="pipelinePanel">
+            <p class="eyebrow">Pipeline</p>
+            <div class="pipe" id="pipe" aria-label="Processing stages">
+              <div class="step" data-k="pending"><div class="dot"></div><div class="name">Pending</div></div>
+              <div class="step" data-k="ocr_running"><div class="dot"></div><div class="name">OCR</div></div>
+              <div class="step" data-k="ai_running"><div class="dot"></div><div class="name">Extract</div></div>
+              <div class="step" data-k="completed"><div class="dot"></div><div class="name">Done</div></div>
+            </div>
+
+            <div id="loadingSkeleton" class="skeleton-wrapper hidden">
+              <div class="skeleton-spinner"></div>
+              <div class="skeleton-text">Analyzing document structure and extracting fields...</div>
+            </div>
+
+            <div class="log" id="log"><div>Idle: no document submitted.</div></div>
+
+            <div id="results" class="hidden">
+              <div class="readout">
+                <div class="stat conf" id="confStat">
+                  <div class="k">Mean confidence</div>
+                  <div class="v"><span id="confVal">-</span><span id="lowBadge" class="badge hidden">Low</span></div>
+                </div>
+                <div class="stat"><div class="k">Pages</div><div class="v" id="pageVal">-</div></div>
+                <div class="stat"><div class="k">Duration</div><div class="v" id="durVal">-</div></div>
+              </div>
+              <pre class="ocr" id="ocrText"></pre>
+              <div class="form-actions" style="margin-top:12px">
+                <button id="reviewUploadBtn" class="hidden" type="button">Review extracted fields</button>
+              </div>
+            </div>
+
+            <div id="failBox" class="fail-box hidden" role="alert"></div>
+          </div>
+        </section>
+
+        <section id="claimsSection" class="hero-grid tab-content hidden" aria-label="Claims">
+          <div class="panel" id="claimUploadPanel">
+            <p class="eyebrow">Submit claim</p>
+            <h2 class="section-title">Upload a patient transfer bundle</h2>
+            <p class="section-note">Multiple files (face sheet, ePCR, PCS, ...) treated as one claim. Each is OCR'd and extracted, then merged and auto-tagged from TAGS.docx.</p>
+            <form id="claimUploadForm">
+              <div class="field">
+                <label for="claimFiles">Files (PDF or image, one claim)</label>
+                <input id="claimFiles" type="file" accept="application/pdf,image/*" multiple required>
+              </div>
+              <div class="form-actions">
+                <button id="claimUploadBtn" type="submit">Upload claim</button>
+              </div>
+              <div id="claimUploadMsg" class="msg" role="status" aria-live="polite"></div>
+            </form>
+            <div class="field" style="margin-top:16px">
+              <label for="claimLookupId">Open an existing claim</label>
+              <div class="search-row">
+                <input id="claimLookupId" type="text" autocomplete="off" placeholder="claim id">
+                <button id="claimLookupBtn" type="button" class="button-secondary">Open</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel" id="claimSearchPanel">
+            <p class="eyebrow">Find claim</p>
+            <h2 class="section-title">Search claims</h2>
+            <form id="claimSearchForm">
+              <div class="search-row">
+                <div class="field">
+                  <label for="cqName">Patient name</label>
+                  <input id="cqName" type="text" autocomplete="off" placeholder="last or first">
+                </div>
+                <div class="field">
+                  <label for="cqRun">Run number</label>
+                  <input id="cqRun" type="text" autocomplete="off">
+                </div>
+                <div class="field">
+                  <label for="cqDob">DOB</label>
+                  <input id="cqDob" type="date">
+                </div>
+                <div class="field">
+                  <label for="cqStatus">Status</label>
+                  <select id="cqStatus">
+                    <option value="completed">completed</option>
+                    <option value="partial">partial</option>
+                    <option value="failed">failed</option>
+                    <option value="pending">pending</option>
+                    <option value="processing">processing</option>
+                  </select>
+                </div>
+                <div class="search-actions">
+                  <button id="claimSearchBtn" type="submit">Search</button>
+                </div>
+              </div>
+            </form>
+            <div id="claimSearchMsg" class="msg hidden" role="status" aria-live="polite"></div>
+            <div class="table-wrap">
+              <table class="claim-table">
+                <thead>
+                  <tr>
+                    <th>Claim ID</th>
+                    <th>Patient</th>
+                    <th>Status</th>
+                    <th>Run #</th>
+                    <th>DOB</th>
+                    <th>Created</th>
+                  </tr>
+                </thead>
+                <tbody id="claimHits"></tbody>
+              </table>
+            </div>
+            <div id="claimHitsEmpty" class="empty hidden">No claims match.</div>
+            <div class="form-actions more">
+              <button id="claimMoreBtn" class="button-secondary hidden" type="button">Load more</button>
+            </div>
+          </div>
+
+          <div class="panel status-card hidden" id="claimDetailPanel">
+            <p class="eyebrow">Claim</p>
+            <div class="review-header">
+              <h2 class="section-title" id="claimStatusTitle">-</h2>
+              <div class="review-actions">
+                <button id="claimReprocessBtn" type="button" class="button-secondary hidden">Reprocess</button>
+                <span id="claimReprocessMsg" class="msg hidden" role="status" aria-live="polite"></span>
+              </div>
+            </div>
+            <p class="pane-title">Documents</p>
+            <div id="claimDocsList" class="pipeline-list"></div>
+            <p class="pane-title" style="margin-top:16px">Assigned tags</p>
+            <div id="claimTagChips" class="chips-row"></div>
+            <div id="claimTagsEmpty" class="empty hidden">No tags assigned yet.</div>
+            <p class="pane-title" style="margin-top:16px">Needs manual review</p>
+            <div id="claimManualTags" class="pipeline-list"></div>
+          </div>
+        </section>
+
+        <section id="searchSection" class="panel tab-content hidden" aria-label="Find document">
+          <div id="searchPanel">
+            <p class="eyebrow">Find document</p>
+            <h2 class="section-title">Search completed attachments</h2>
+            <p class="section-note">Filter by patient name, run number, or DOB range. Start a confidence-ranked review queue from the results.</p>
+            <form id="searchForm">
+              <div class="search-row">
+                <div class="field">
+                  <label for="qName">Patient name</label>
+                  <input id="qName" type="text" autocomplete="off" placeholder="last or first">
+                </div>
+                <div class="field">
+                  <label for="qRun">Run number</label>
+                  <input id="qRun" type="text" autocomplete="off">
+                </div>
+                <div class="field">
+                  <label for="qDob">DOB</label>
+                  <input id="qDob" type="date">
+                </div>
+                <div class="search-actions">
+                  <button id="searchBtn" type="submit">Search</button>
+                </div>
+              </div>
+            </form>
+            <div id="searchMsg" class="msg hidden" role="status" aria-live="polite"></div>
+            <ul class="hits" id="hits"></ul>
+            <div id="hitsEmpty" class="empty hidden">No documents match.</div>
+            <div class="form-actions more">
+              <button id="moreBtn" class="button-secondary hidden" type="button">Load more</button>
+              <button id="startQueueBtn" class="hidden" type="button">Start review queue</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="reviewSection" class="tab-content hidden" aria-label="Review workspace">
+          <div id="review" class="panel review-shell hidden">
+            <div class="review-header">
+              <div>
+                <p class="eyebrow">Review</p>
+                <h2 class="section-title" id="reviewName">-</h2>
+              </div>
+              <div class="review-actions">
+                <button id="reprocessBtn" type="button" class="button-secondary hidden">Reprocess</button>
+                <span id="reprocessMsg" class="msg hidden" role="status" aria-live="polite"></span>
+                <button id="markReviewedBtn" type="button" class="button-secondary hidden">Mark Reviewed</button>
+                <span id="markReviewedMsg" class="msg hidden" role="status" aria-live="polite"></span>
+              </div>
+            </div>
+
+            <div id="queueBar" class="queue-bar hidden">
+              <span id="queueCount" class="cnt"></span>
+              <button id="queuePrevBtn" type="button" class="button-secondary hidden">Review back</button>
+              <button id="queueNextBtn" type="button">Review next</button>
+            </div>
+
+            <div class="review-layout">
+              <div class="review-pane-fields">
+                <p class="pane-title">Extracted fields</p>
+                <div id="narrativeSummary" class="hidden"></div>
+                <div id="flagChips" class="hidden"></div>
+                <div class="fields" id="fields"></div>
+                <div id="fieldsMsg" class="empty hidden"></div>
+                <div id="relatedPanel" class="hidden"></div>
+              </div>
+
+              <div class="review-pane-page">
+                <div class="page-toolbar">
+                  <p class="pane-title" style="margin:0">Source page <span id="srcHint" class="sub"></span></p>
+                  <div class="toolbar">
+                    <button type="button" id="pagePrevBtn" class="button-secondary" aria-label="Previous page">Prev</button>
+                    <span id="pageCounter" class="page-status">Page 1 of 1</span>
+                    <button type="button" id="pageNextBtn" class="button-secondary" aria-label="Next page">Next</button>
+                    <button type="button" id="pageExpandBtn" class="button-secondary" aria-label="Expand source page">Expand</button>
+                  </div>
+                </div>
+                <div class="page-scroll" id="pageScroll">
+                  <div class="page-wrap" id="pageWrap">
+                    <img class="page-img hidden" id="pageImg" alt="Rendered document page" width="1200" height="1600" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+                    <div id="boxLayer"></div>
+                  </div>
+                  <div id="pageMsg" class="page-msg" role="status">Open a document to load the page image.</div>
+                </div>
+              </div>
+
+              <div class="review-pane-source">
+                <p class="pane-title">OCR source text</p>
+                <div class="source" id="source" aria-label="OCR lines"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div id="pageLightbox" class="lightbox hidden" role="dialog" aria-modal="true" aria-label="Source page, expanded">
+          <button type="button" id="lightboxCloseBtn" class="button-secondary lightbox-close" aria-label="Close expanded page">Close</button>
+          <div class="lightbox-frame">
+            <img id="lightboxImg" alt="Rendered document page, expanded">
+            <div id="lightboxBoxes"></div>
+          </div>
+        </div>
+
+        <section id="auditSection" class="panel tab-content hidden" aria-label="Audit trail">
+          <div id="auditPanel">
+            <p class="eyebrow">Audit trail</p>
+            <h2 class="section-title">Recent activity</h2>
+            <p class="section-note">Role-gated. Entries are PHI-free by construction.</p>
+            <div class="audit-toolbar">
+              <div class="field">
+                <label for="auditAction">Action type</label>
+                <select id="auditAction">
+                  <option value="">All actions</option>
+                  <option value="login_succeeded">login_succeeded</option>
+                  <option value="login_failed">login_failed</option>
+                  <option value="token_refreshed">token_refreshed</option>
+                  <option value="token_rejected">token_rejected</option>
+                  <option value="document_uploaded">document_uploaded</option>
+                  <option value="document_viewed">document_viewed</option>
+                  <option value="document_downloaded">document_downloaded</option>
+                  <option value="document_upload_rejected">document_upload_rejected</option>
+                  <option value="extraction_field_corrected">extraction_field_corrected</option>
+                  <option value="document_reprocessed">document_reprocessed</option>
+                  <option value="ocr_completed">ocr_completed</option>
+                  <option value="ocr_failed">ocr_failed</option>
+                  <option value="ai_completed">ai_completed</option>
+                  <option value="ai_failed">ai_failed</option>
+                  <option value="audit_log_viewed">audit_log_viewed</option>
+                </select>
+              </div>
+              <button id="auditLoadBtn" type="button">Load recent activity</button>
+            </div>
+            <div id="auditMsg" class="msg hidden" role="status" aria-live="polite"></div>
+            <div class="fields audit-results" id="auditHits"></div>
+            <div id="auditEmpty" class="empty hidden">No audit entries visible to this account.</div>
+            <div class="form-actions more">
+              <button id="auditMoreBtn" class="button-secondary hidden" type="button">Load more</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="pipelineSection" class="panel tab-content hidden" aria-label="Pipeline status">
+          <p class="eyebrow">Pipeline</p>
+          <h2 class="section-title">Processing status</h2>
+          <p class="section-note" id="pipelineSummary">-</p>
+          <div class="pipeline-grid">
+            <div class="pipeline-section">
+              <p class="eyebrow">In flight</p>
+              <div id="pipelineInFlight" class="pipeline-list"></div>
+              <div id="pipelineInFlightEmpty" class="empty hidden">Nothing in flight.</div>
+            </div>
+            <div class="pipeline-section">
+              <p class="eyebrow">Interrupted by restart</p>
+              <div id="pipelineInterrupted" class="pipeline-list"></div>
+              <div id="pipelineInterruptedEmpty" class="empty hidden">None.</div>
+            </div>
+            <div class="pipeline-section">
+              <p class="eyebrow">Other failures</p>
+              <div id="pipelineFailed" class="pipeline-list"></div>
+              <div id="pipelineFailedEmpty" class="empty hidden">None.</div>
+            </div>
+            <div class="pipeline-section">
+              <p class="eyebrow">Extraction incomplete</p>
+              <div id="pipelineExtractionFailed" class="pipeline-list"></div>
+              <div id="pipelineExtractionFailedEmpty" class="empty hidden">None.</div>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="button" id="bulkReprocessBtn" disabled>Reprocess selected</button>
+            <span id="bulkReprocessMsg" class="msg hidden" role="status" aria-live="polite"></span>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+</div>
+<script src="js/app.js" defer></script>
+</body>
+</html>

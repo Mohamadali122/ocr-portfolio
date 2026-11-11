@@ -1,0 +1,257 @@
+# Machine-readable predicates for the tags defined in files_for_project/TAGS.docx.
+#
+# See app/services/tag_registry.py for how this file is joined against the
+# docx, and app/services/tagging.py for the leaf/combinator vocabulary a
+# `[[tag]]` entry's condition keys are evaluated with. `name` must match a
+# tag name in TAGS.docx (case/whitespace-insensitive) -- app.main's lifespan
+# fails to start if it doesn't, so a typo here is caught at boot, not in
+# production silence.
+#
+# A tag from TAGS.docx with no [[tag]] entry here is a manual-review prompt:
+# it is not missing by accident. Most are missing reference data this system
+# doesn't have (a facilities sheet, a BCBS prefix sheet, Prestige/Detox
+# address lists, HCA group membership), or need cross-trip history (repeat
+# trips within 3 months, "2 trips same DOS") this pipeline has no notion of.
+# Two -- MCR Age, MCD Minor -- are withheld because TAGS.docx and the SOP
+# narrative it was generated from disagree with each other on the threshold;
+# see files_for_project/PREBILLER_QUESTIONS.md. Adding a rule for any of these later is exactly
+# one [[tag]] entry, no code change.
+#
+# Every regex here is deliberately loose (a keyword or phrase, not a strict
+# grammar) -- these are advisory tags for a human reviewer, not a billing
+# decision made unattended. A false positive costs a reviewer one glance; a
+# false negative costs nothing, since the tag was never going to fire anyway.
+
+[[tag]]
+name = "NO EPCR"
+missing_doc_type = "epcr"
+
+[[tag]]
+name = "Invalid Pt Demos"
+# TAGS.docx: "unable to find the address and we use the company's address (CBO)".
+field = "address_line1"
+field_source = "sop_default"
+
+[[tag]]
+name = "No Face Sheet"
+missing_doc_type = "hfs"
+
+[[tag]]
+name = "Non-Emergent"
+# billing SOP — "P3 (Non emergent transport), Wheelchair, Morgue"
+any = [
+    { field = "transport_priority", matches = "P3" },
+    { field = "destination_facility", matches = "morgue" },
+    { field = "requested_level_of_service", matches = "wheelchair" },
+]
+
+[[tag]]
+name = "911"
+field = "transport_priority"
+matches = "P1"
+
+[[tag]]
+name = "Port Arthur Quick bill"
+field = "pickup_address"
+matches = "port arthur|nederland|groves|port neches|bridge city"
+
+[[tag]]
+name = "Crane + 911"
+all = [
+    { field = "pickup_address", matches = "crane" },
+    { field = "transport_priority", matches = "P1" },
+]
+
+[[tag]]
+name = "BCBSTX HMO"
+all = [
+    { insurance = { slot = 0, field = "insurance_name", matches = "bcbs|blue cross" } },
+    { insurance = { slot = 0, field = "policy_id", prefix_in = [
+        "ZGZ", "ZGN", "ZGI", "T2U", "T2G", "JEA", "VER",
+    ] } },
+]
+
+[[tag]]
+name = "Pt Demos Correction"
+# billing SOP — "Name/dob/Gender/Age in HFS different from EPCR and narrative"
+any = [
+    { field_conflict = "last_name" },
+    { field_conflict = "first_name" },
+    { field_conflict = "dob" },
+    { field_conflict = "gender" },
+    { field_conflict = "age" },
+]
+
+[[tag]]
+name = "Life Flight"
+text = "life\\s*flight"
+
+[[tag]]
+name = "No Transport"
+text = "\\bAMA\\b|refused to transport|ambulance stand(s|ing) by|patient deceased"
+
+[[tag]]
+name = "Sig Care Insured"
+all = [
+    { field = "destination_facility", matches = "signature care" },
+    { insurance = { slot = 0, field = "insurance_name", present = true } },
+]
+
+[[tag]]
+name = "Hospice"
+# TAGS.docx's own reason cites "Drop-off" as a valid source alongside
+# narrative -- `destination_facility` is already an extracted, grounded
+# field for exactly that, safer than a `text` search over raw OCR.
+field = "destination_facility"
+matches = "hospice"
+
+[[tag]]
+name = "Dialysis"
+field = "destination_facility"
+matches = "dialysis"
+
+[[tag]]
+name = "Wheelchair transport"
+# `requested_level_of_service` is an already-extracted, grounded field --
+# dropped the `text` search over raw OCR it used to be paired with, which
+# could also match an equipment-checklist legend or an unrelated mention.
+field = "requested_level_of_service"
+matches = "wheelchair"
+
+[[tag]]
+name = "CAS Employee"
+# LLM-extracted `employer_name`, not raw `text` -- "city ambulance" also
+# appears in every one of this agency's own report letterheads (confirmed
+# live: a real PCR wrongly tagged this off "Company City Ambulance
+# Service ..." on its own header). `employer_name` is grounded the same as
+# every other field and, per the SOP, is specifically the *patient's*
+# employer -- the LLM already correctly leaves it blank when the only
+# occurrence of the agency's name is its own letterhead.
+field = "employer_name"
+matches = "city ambulance"
+
+[[tag]]
+name = "Do Not Bill Patient"
+field = "employer_name"
+matches = "city ambulance"
+
+[[tag]]
+name = "UTMB Employee"
+field = "employer_name"
+matches = "\\bUTMB\\b"
+
+[[tag]]
+name = "Prepaid Do Not Bill Patient"
+text = "\\bvoucher\\b"
+
+[[tag]]
+name = "MVA/PI Quick bill"
+# `primary_impression` is already an extracted, grounded field -- safer than
+# a `text` search over raw OCR, which could also match an unselected
+# incident-type legend or an unrelated mention.
+field = "primary_impression"
+matches = "MVA|motor vehicle accident"
+
+[[tag]]
+name = "Work comp"
+field = "primary_impression"
+matches = "work.{0,10}comp|work[- ]related injury"
+
+[[tag]]
+name = "Quickbill"
+field = "primary_impression"
+matches = "work.{0,10}comp|work[- ]related injury"
+
+[[tag]]
+name = "PCS correction"
+any = [
+    { field_conflict = "last_name" },
+    { field_conflict = "first_name" },
+    { field_conflict = "dob" },
+    { field_conflict = "pcs_date_of_transfer" },
+]
+
+[[tag]]
+name = "Invalid PCS"
+all = [
+    { has_doc_type = "pcs" },
+    { any = [
+        { field = "authorizing_physician", present = false },
+        { field = "physician_title", present = false },
+        { field = "pcs_date_of_sign", present = false },
+    ] },
+]
+
+[[tag]]
+name = "NO PCS"
+# Only meaningful once we already know the transport was non-emergent
+# (Non-Emergent is evaluated first -- it appears earlier in TAGS.docx, and
+# app.services.tagging.evaluate() runs in that order).
+#
+# billing SOP: wheelchair is an exception to the PCS requirement,
+# so adding the wheelchair disjunct to Non-Emergent would widen NO PCS onto
+# wheelchair claims unless guarded here.
+all = [
+    { missing_doc_type = "pcs" },
+    { requires_tag = "Non-Emergent" },
+    { none = [{ field = "requested_level_of_service", matches = "wheelchair" }] },
+]
+
+[[tag]]
+name = "LOA"
+text = "\\bLOA\\b|letter of agreement"
+
+[[tag]]
+name = "INMATE"
+text = "\\binmate\\b"
+
+[[tag]]
+name = "Temple"
+all = [
+    { field = "pickup_address", matches = "temple" },
+    { field = "destination_facility", matches = "temple" },
+]
+
+[[tag]]
+name = "Austin"
+all = [
+    { field = "pickup_address", matches = "austin" },
+    { field = "destination_facility", matches = "austin" },
+]
+
+[[tag]]
+name = "QA/Mileage Review"
+numeric_diff = { fields = ["actual_mileage", "actual_distance"], min = 5 }
+
+[[tag]]
+name = "Morgue"
+# A morgue is a destination -- `destination_facility` is already an
+# extracted, grounded field (same reasoning as Temple/Austin below), safer
+# than a `text` search over the whole document's raw OCR.
+field = "destination_facility"
+matches = "morgue"
+
+[[tag]]
+name = "Ref-sig"
+text = "refuse[sd]? to sign|\\bAMA\\b"
+
+[[tag]]
+name = "Bariatric"
+field = "weight_kg"
+bariatric = true
+
+[[tag]]
+name = "Auth-Call"
+text = "auth(?:orization)?\\s*email"
+
+[[tag]]
+name = "Detox"
+field = "destination_facility"
+matches = "bayou city er|kingwood emergency room|life savers er"
+
+[[tag]]
+name = "PSYCH"
+all = [
+    { field = "primary_impression", matches = "\\bpsych" },
+    { insurance = { slot = 0, field = "insurance_name", matches = "bcbs" } },
+]

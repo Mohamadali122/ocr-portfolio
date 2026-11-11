@@ -1,0 +1,150 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "local-doc-ocr"
+version = "0.1.0"
+description = "HIPAA-ready local OCR and AI document processing for dispatch prebilling"
+requires-python = ">=3.11,<3.12"
+
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "sqlalchemy>=2.0.36",
+    "psycopg[binary]>=3.2",
+    "alembic>=1.14",
+    "structlog>=24.4",
+    "argon2-cffi>=23.1",
+    "pyjwt>=2.10",
+    "email-validator>=2.2",
+    "cryptography>=44.0",
+    "python-multipart>=0.0.20",
+    "pypdf>=5.1",
+    "httpx>=0.28",
+    "slowapi>=0.1.9",
+    "redis>=5.0",
+    "celery>=5.4",
+    # Core pipeline preprocessing (app/ocr/rasterize.py, app/ocr/pdf_text.py),
+    # not the swappable OCR engine -- see the comment on the `ocr` extra below
+    # for why these moved out of it.
+    "pypdfium2>=4.30",
+    "pillow>=11",
+]
+
+[project.optional-dependencies]
+
+dev = [
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "import-linter>=2.1",
+]
+
+# `paddlepaddle`/`paddleocr`/`opencv-python-headless`/`numpy` are the ~2GB the
+# Dockerfile comment and CLAUDE.md warn about, and the only things
+# `app/ocr/paddle_engine.py` (the swappable `OcrEngine` adapter -- see
+# `app/ocr/base.py`) needs; every test fakes that engine out
+# (`tests/fakes.py::FakeOcrEngine`), so CI never installs this extra.
+# `pypdfium2`/`pillow` used to live here too, but they aren't engine-specific:
+# `app/ocr/rasterize.py` and `app/ocr/pdf_text.py` call them unconditionally
+# for any PDF/image, ahead of the engine seam (`PipelineService._run_ocr`
+# tries `pdf_text.extract_text_layer` before ever reaching `self._engine`) --
+# genuinely core pipeline logic, not an optional adapter, and `tests/unit/test_rasterize.py`
+# / `test_pdf_text.py` exercise the real thing rather than a fake. Moved to
+# `dependencies` below so the real pipeline preprocessing is actually tested
+# in CI without pulling in the heavy ML frameworks.
+ocr = [
+    "paddlepaddle>=3.1,<3.2",
+    "paddleocr>=3.2,<3.3",
+    "opencv-python-headless>=4.12",
+    "numpy>=2.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "S", "A", "C4", "RET", "SIM", "TID"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+plugins = ["pydantic.mypy"]
+
+# Neither ships inline types or a stub package as of the pinned versions.
+# Both are only ever imported lazily inside functions (see rasterize.py,
+# pdf_text.py, paddle_engine.py) precisely so pytest/alembic don't pay their
+# import cost -- this override just stops mypy flagging that same boundary.
+# `pypdfium2` is a core dependency now (see `dependencies` above), always
+# installed; `paddleocr` and `cv2` (opencv-python-headless) stay behind the
+# `ocr` extra and CI never has them.
+[[tool.mypy.overrides]]
+module = ["pypdfium2.*", "paddleocr.*", "cv2.*"]
+ignore_missing_imports = true
+
+# numpy does ship inline types, but it's part of the `[ocr]` extra (see
+# above) and CI (.github/workflows/ci.yml) deliberately never installs that
+# extra -- paddle_engine.py imports numpy lazily for the same reason
+# pypdfium2/paddleocr are lazy above, and this override lets the `np.ndarray`
+# type hints there resolve to `Any` when the real package isn't present.
+[[tool.mypy.overrides]]
+module = ["numpy.*"]
+ignore_missing_imports = true
+
+# Celery does not ship inline types as of the pinned version (a `celery-types`
+# stub package exists but is a separate, unmaintained-cadence dependency for
+# one decorator's sake) -- `app/worker.py` is the only module importing it.
+[[tool.mypy.overrides]]
+module = ["celery.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+
+[tool.importlinter]
+root_package = "app"
+
+[[tool.importlinter.contracts]]
+name = "Services depend on protocols, never on adapters"
+type = "forbidden"
+source_modules = ["app.services"]
+forbidden_modules = [
+    "app.ocr.paddle_engine",
+    "app.storage.encrypted_local",
+    "app.llm.openai_compat",
+]
+
+[[tool.importlinter.contracts]]
+name = "The domain does not depend on the web layer"
+type = "forbidden"
+source_modules = [
+    "app.models",
+    "app.repositories",
+    "app.services",
+    "app.storage",
+    "app.ocr",
+    "app.llm",
+]
+forbidden_modules = ["app.api", "app.main"]
+
+[[tool.importlinter.contracts]]
+name = "Models and repositories do not reach up into services"
+type = "forbidden"
+source_modules = [
+    "app.models",
+    "app.repositories",
+]
+forbidden_modules = ["app.services"]

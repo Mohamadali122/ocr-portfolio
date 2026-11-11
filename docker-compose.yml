@@ -1,0 +1,132 @@
+name: local-doc-ocr
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_HOST: db
+      DATA_DIR: /srv/data
+      # Shared rate-limit backend (app/core/rate_limit.py) -- required outside
+      # ENVIRONMENT=local by Settings._require_redis_outside_local.
+      REDIS_URL: redis://redis:6379/0
+      # Runtime Safety: Guarantees Python's Protobuf mask persists through the Uvicorn state
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+    # Development Ergonomics: Runs migrations as your host user ID so generated
+    # migration files aren't locked behind host root permissions. Falls back to root if empty.
+    user: "${HOST_UID:-0}:${HOST_GID:-0}"
+    volumes:
+      - appdata:/srv/data
+      - ./app:/srv/app/app:ro
+      - ./tests:/srv/app/tests:ro
+      - ./alembic:/srv/app/alembic
+      - ./scripts:/srv/app/scripts:ro
+      - ./.cache/paddlex:/root/.paddlex
+      # Tag registry source of truth (app/services/tag_registry.py). Read
+      # only -- edits happen to the repo-root file on the host, not in the
+      # container.
+      - ./files_for_project/TAGS.docx:/srv/app/TAGS.docx:ro
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: .
+    restart: unless-stopped
+    # Hardware Pinning: Pins the container to the first 4 P-cores of your
+    # 13th Gen i7 CPU. Prevents Intel MKL memory allocation crashes across the
+    # core-split. PaddleOCR now runs here, not in `api` -- `get_ocr_engine()`
+    # is only ever called from `app/worker.py`.
+    cpuset: "0-3"
+    command: celery -A app.worker worker --loglevel=info --concurrency=1
+    env_file: .env
+    environment:
+      POSTGRES_HOST: db
+      DATA_DIR: /srv/data
+      REDIS_URL: redis://redis:6379/0
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+    user: "${HOST_UID:-0}:${HOST_GID:-0}"
+    volumes:
+      - appdata:/srv/data
+      - ./app:/srv/app/app:ro
+      - ./tests:/srv/app/tests:ro
+      - ./alembic:/srv/app/alembic
+      - ./.cache/paddlex:/root/.paddlex
+      # scripts/prompt_eval: the offline prompt-correctness harness. Mounted
+      # only here, not on `api` -- it needs the same PaddleOCR + LM Studio
+      # access `get_ocr_engine()`'s comment says is worker-only. `sample/` is
+      # real PHI (gitignored, see .gitignore) and rw because the harness
+      # writes its OCR cache/answer keys/reports under sample/eval/.
+      - ./scripts:/srv/app/scripts:ro
+      - ./sample:/srv/app/sample
+      - ./files_for_project/TAGS.docx:/srv/app/TAGS.docx:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Scheduler for reap_stale_documents (app/worker.py's beat_schedule) --
+  # its own process, not folded into `worker`, so restarting either one
+  # doesn't touch the other's queue/schedule state. No PaddleOCR/LM Studio
+  # access needed, just DB + Redis, so it skips worker's cpuset pin and
+  # sample/scripts mounts.
+  beat:
+    build: .
+    restart: unless-stopped
+    command: celery -A app.worker beat --loglevel=info
+    env_file: .env
+    environment:
+      POSTGRES_HOST: db
+      DATA_DIR: /srv/data
+      REDIS_URL: redis://redis:6379/0
+      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+    user: "${HOST_UID:-0}:${HOST_GID:-0}"
+    volumes:
+      - appdata:/srv/data
+      - ./app:/srv/app/app:ro
+      - ./tests:/srv/app/tests:ro
+      - ./alembic:/srv/app/alembic
+      - ./files_for_project/TAGS.docx:/srv/app/TAGS.docx:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  appdata:
